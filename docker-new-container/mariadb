@@ -1,0 +1,30 @@
+#!/bin/bash
+
+NAME=mariadb
+
+IP=192.168.5.202
+
+MOUNTS=/data/db-data/mariadb
+
+MysqlUser=pike
+
+MysqlPwd=pike
+
+MysqlDB=PIKE
+
+ISO=centos/mariadb-101-centos7
+
+
+docker run -d \
+--net=br0 \
+--ip=$IP \
+-p 13306:3306 \
+--name=$NAME \
+--privileged=true \
+--restart=always \
+-h mariadb \
+-v $MOUNTS:/var/lib/mysql/data \
+-e MYSQL_USER=$MysqlUser \
+-e MYSQL_PASSWORD=$MysqlPwd \
+-e MYSQL_DATABASE=$MysqlDB \
+$ISO \

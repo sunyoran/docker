@@ -1,0 +1,24 @@
+#!/bin/bash
+
+NAME=oracle
+
+IP=192.168.5.203
+
+ISO=sath89/oracle-ee-11g
+
+docker run -d \
+--net=br0 \
+--ip=$IP \
+-p 8080:8080 \
+-p 1521:1521 \
+--name=$NAME \
+-h oracle \
+--privileged=true \
+--shm-size=400g \
+-v /data/db-data/oracle:/u01/app/oracle \
+--restart=always \
+$ISO 
+
+docker cp /data/docker-init-demo/oracle/createinstance oracle:/
+
+docker exec oracle /bin/bash -c "chmod +x /createinstance"

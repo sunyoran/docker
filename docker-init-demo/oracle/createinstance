@@ -1,0 +1,149 @@
+#!/bin/bash
+
+SID=$1
+TBS=$2
+
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/product/11.2.0/EE
+export ORACLE_SID=$SID
+export ORA_DATA=$ORACLE_BASE/oradata
+export CHARACTER_SET=AL32UTF8
+
+LOG=$ORACLE_BASE/init/$SID/create.log
+
+rm -rf $ORACLE_BASE/init/$SID
+mkdir -p $ORACLE_BASE/init/$SID
+
+chown -R oracle:oracle $ORACLE_BASE/init
+
+rm -rf $ORACLE_BASE/admin/$SID
+mkdir -p $ORACLE_BASE/admin/$SID/{adump,dpdump,pfile}
+chown -R oracle:oracle $ORACLE_BASE/admin/$SID
+
+rm -rf $ORA_DATA/$SID
+mkdir -p $ORA_DATA/$SID
+chown -R oracle:oracle $ORA_DATA/$SID
+
+# add auto start statement to /etc/oratab
+echo "$SID:$ORACLE_HOME:Y" >> /etc/oratab
+
+#create init parameter ora file
+touch $ORACLE_HOME/dbs/init$SID.ora
+PFILE=$ORACLE_HOME/dbs/init$SID.ora
+
+echo "db_name='$SID'" >> $PFILE
+echo "memory_target=8G" >> $PFILE
+echo "processes=1000" >> $PFILE
+echo "audit_file_dest='$ORACLE_BASE/admin/$SID/adump'" >> $PFILE
+echo "audit_trail='db'" >> $PFILE
+echo "db_block_size=8192" >> $PFILE
+echo "db_domain=''" >> $PFILE
+echo "db_recovery_file_dest='$ORACLE_BASE/flash_recovery_area'" >> $PFILE
+echo "db_recovery_file_dest_size=2G" >> $PFILE
+echo "diagnostic_dest='$ORACLE_BASE'" >> $PFILE
+echo "dispatchers='(PROTOCOL=TCP) (SERVICE=$SIDXDB)'" >> $PFILE
+echo "open_cursors=300" >> $PFILE
+echo "remote_login_passwordfile='EXCLUSIVE'" >> $PFILE
+echo "undo_tablespace='UNDOTBS1'" >> $PFILE
+echo "control_files='$ORA_DATA/$SID/control01.ctl'" >> $PFILE
+echo "compatible='11.2.0'" >> $PFILE
+
+#end create init parameter ora file 
+
+#create database
+
+touch $ORACLE_BASE/init/$SID/db.sql
+S_DB=$ORACLE_BASE/init/$SID/db.sql
+
+echo "create database $SID" >> $S_DB
+echo "  USER SYS IDENTIFIED BY oracle" >> $S_DB
+echo "  USER SYSTEM IDENTIFIED BY oracle" >> $S_DB
+echo "  LOGFILE GROUP 1 ('$ORA_DATA/$SID/redo01.log') SIZE 100M," >> $S_DB
+echo "      GROUP 2 ('$ORA_DATA/$SID/redo02.log') SIZE 100M," >> $S_DB
+echo "      GROUP 3 ('$ORA_DATA/$SID/redo03.log') SIZE 100M" >> $S_DB
+echo "  MAXLOGFILES 5" >> $S_DB
+echo "  MAXLOGMEMBERS 5" >> $S_DB
+echo "  MAXLOGHISTORY 1" >> $S_DB
+echo "  MAXDATAFILES 100" >> $S_DB
+echo "  MAXINSTANCES 1" >> $S_DB
+echo "  CHARACTER SET AL32UTF8" >> $S_DB
+echo "  DATAFILE '$ORA_DATA/$SID/system01.dbf' SIZE 300M REUSE " >> $S_DB
+echo "  AUTOEXTEND ON NEXT 10240K" >> $S_DB
+echo "  EXTENT MANAGEMENT LOCAL" >> $S_DB
+echo "  SYSAUX DATAFILE '$ORA_DATA/$SID/sysaux01.dbf' SIZE 300M REUSE" >> $S_DB
+echo "  DEFAULT TEMPORARY TABLESPACE temp" >> $S_DB
+echo "   TEMPFILE '$ORA_DATA/$SID/temp01.dbf'" >> $S_DB
+echo "   SIZE 20M REUSE" >> $S_DB
+echo "  UNDO TABLESPACE undotbs1" >> $S_DB
+echo "   DATAFILE '$ORA_DATA/$SID/undotbs1.dbf'" >> $S_DB
+echo "   SIZE 200M REUSE AUTOEXTEND ON MAXSIZE UNLIMITED;" >> $S_DB
+
+#end create database
+
+#create dictionary
+
+touch $ORACLE_BASE/init/$SID/dict.sql
+S_DICT=$ORACLE_BASE/init/$SID/dict.sql
+
+echo "$ORACLE_HOME/rdbms/admin/catalog" >> $S_DICT
+echo "$ORACLE_HOME/rdbms/admin/catproc" >> $S_DICT
+echo "conn system/oracle" >> $S_DICT
+echo "$ORACLE_HOME/sqlplus/admin/pupbld" >> $S_DICT
+echo "conn / as sysdba" >> $S_DICT
+
+#end craete dictionary
+
+#create pfile
+
+touch $ORACLE_BASE/init/$SID/spfile.sql
+S_SPFILE=$ORACLE_BASE/init/$SID/spfile.sql
+echo "CREATE spfile FROM pfile;" >> $S_SPFILE
+
+# end create pfile
+
+#create tablespace and pike user
+
+touch $ORACLE_BASE/init/$SID/tbs.sql
+S_TBS=$ORACLE_BASE/init/$SID/tbs.sql
+
+echo "CREATE TABLESPACE $TBS" >> $S_TBS
+echo "  DATAFILE '$ORA_DATA/$SID/$TBS.dbf' SIZE 100M" >> $S_TBS
+echo "  AUTOEXTEND ON next 100M maxsize unlimited;" >> $S_TBS
+echo "ALTER DATABASE DEFAULT TABLESPACE $TBS;" >> $S_TBS
+echo "" >> $S_TBS
+echo "CREATE USER pike IDENTIFIED BY pike default tablespace $TBS;" >> $S_TBS
+echo "ALTER USER pike ACCOUNT UNLOCK;" >> $S_TBS
+echo "ALTER USER pike quota unlimited on $TBS;" >> $S_TBS
+echo "ALTER USER pike default role all;" >> $S_TBS
+echo "grant all privileges to pike;" >> $S_TBS
+echo "exit;" >> $S_TBS
+
+#end create tablespace and pike user
+sleep 10
+
+
+# Execute Script
+#su oracle -c "NLS_LANG=$CHARACTER_SET $ORACLE_HOME/bin/sqlplus / as sysdba >> $LOG 2>&1 startup nomountk 
+su oracle -c "NLS_LANG=$ChARACTER_SET $ORACLE_HOME/bin/sqlplus / as sysdba >> $LOG 2>&1 << EOF
+startup nomount
+@$S_DB
+@$S_DICT
+@$S_SPFILE
+@$S_TBS
+EOF
+"
+#End Script
+
+# Rebuild Dictionary
+
+su oracle -c "NLS=$CHARACTER_SET $ORACLE_HOME/bin/sqlplus /nolog >> $LOG 2>&1 <<EOF 
+connect sys/oracle as sysdba
+@$ORACLE_HOME/rdbms/admin/catalog.sql
+@$ORACLE_HOME/rdbms/admin/catproc.sql
+@$ORACLE_HOME/rdbms/admin/catexp.sql
+shutdown about;
+startup;
+exit;
+EOF
+"
+# End Rebuild Dictionary

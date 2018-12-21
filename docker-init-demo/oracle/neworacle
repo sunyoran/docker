@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# First parameter is oracle sid
+# Second parameter is tablespace name to be created
+
+docker exec oracle /bin/bash -c "/createinstance $1 $2"
